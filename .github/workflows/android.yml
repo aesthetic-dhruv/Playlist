@@ -1,0 +1,43 @@
+name: Build Misri APK
+
+# Manual run only, so a fork does not rebuild on every upstream sync.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+
+      - name: Apply Misri rename + credit patch
+        run: |
+          # patch-misri.py is added at the repo root by the builder.
+          # It edits only files under "Part 7/" and keeps Tech GPTx attribution.
+          python3 patch-misri.py
+
+      - name: Build debug APK (Part 7)
+        run: |
+          chmod +x "Part 7/gradlew"
+          cd "Part 7"
+          ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: misri-apk
+          path: "Part 7/app/build/outputs/apk/debug/*.apk"
+          if-no-files-found: error

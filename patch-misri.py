@@ -465,3 +465,23 @@ replace(APP / "ui/home/UpdatesFragment.kt", [
      'FeatureNotice("Appearance", "Cute Pink theme by default", "Fresh installs start with the cute pink theme; you can still select Sunset and other themes in Settings.")'),
 ])
 print("Phase 3 done.")
+
+
+# === Phase 3.1 (v3.1, found by verifying the built Run #3 APK, not just source) ===
+# Two more footer credits and the settings HTML creator card still carried
+# the old name in the BUILT APK (they were below the earlier grep cut-off):
+#  - activity_privacy_shield.xml footer: "MISRI INTELLIGENCE OS • TECHGPT X"
+#  - activity_hands_free.xml footer: "MISRI INTELLIGENCE OS • TECHGPT X"
+#  - assets/settings/settings.html creator card: "Rehaan Sir" + "@TechGptX"
+# All three become Raj Chauhan. The licence credit in App Identity stays.
+replace(LAYOUT / "activity_privacy_shield.xml", [
+    ('MISRI INTELLIGENCE OS \u2022 TECHGPT X', 'MISRI INTELLIGENCE OS \u2022 Raj Chauhan'),
+], must_find=False)
+replace(LAYOUT / "activity_hands_free.xml", [
+    ('MISRI INTELLIGENCE OS \u2022 TECHGPT X', 'MISRI INTELLIGENCE OS \u2022 Raj Chauhan'),
+], must_find=False)
+replace(P7 / "app/src/main/assets/settings/settings.html", [
+    ('<div class="creator-name">Rehaan Sir</div>', '<div class="creator-name">Raj Chauhan</div>'),
+    ('@TechGptX', 'Raj Chauhan'),
+], must_find=False)
+print("Phase 3.1 done.")

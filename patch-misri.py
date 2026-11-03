@@ -8,6 +8,18 @@ It edits files under "Part 7/" only. It deliberately does NOT touch:
   - LICENSE / Tech GPTx attribution (kept, per TAMCL v1.0 section 2)
   - the original repo README credit
 It ADDS Raj Chauhan as modifier alongside the original author.
+
+Phase 2 (v2, user clarification 2026-11-03): every remaining standalone
+user-visible "Jarvis"/"JARVIS" word in Kotlin, layout XML and HTML assets
+becomes "Misri"/"MISRI" — app screens, dialogs, toasts, persona label
+("Jarvis Pro" -> "Misri Pro"), voice-enrollment examples, settings HTML,
+HUD/orb titles, and AI tool descriptions. Girlfriend Mode (Pari) is kept
+unchanged. Word-boundary matching protects code identifiers: package
+com.jarvis.assistant, class names like JarvisApp, view IDs like
+tvJarvisResponse, JS bridges like JarvisOrb/JarvisBridge, and theme names
+like Theme.JarvisAssistant are NOT renamed. The original-credit lines
+("Original JARVIS by Tech GPTx") are restored after phase 2, per the
+license, and DeveloperInfo/AppIdentityVerifier are excluded from phase 2.
 """
 import pathlib, sys
 
@@ -106,5 +118,48 @@ replace(APP / "ui/settings/SettingsFragment.kt", [
     ('binding.tvProfileSubtitle.text = "JARVIS OPERATOR • PRIMARY USER"',
      'binding.tvProfileSubtitle.text = "MISRI OPERATOR • PRIMARY USER"'),
 ])
+
+# 8. Phase 2 — remaining standalone user-visible Jarvis/JARVIS words
+import re
+PROTECTED = {
+    (APP / "security/DeveloperInfo.kt").resolve(),
+    (APP / "security/AppIdentityVerifier.kt").resolve(),
+}
+changed_files = 0
+for root_dir in [P7 / "app/src/main/java", P7 / "app/src/main/res", P7 / "app/src/main/assets"]:
+    if not root_dir.exists():
+        continue
+    for p in sorted(root_dir.rglob("*")):
+        if not p.is_file() or p.suffix not in (".kt", ".xml", ".html"):
+            continue
+        if p.resolve() in PROTECTED:
+            continue
+        txt = p.read_text(encoding="utf-8", errors="ignore")
+        new_txt, n1 = re.subn(r"\bJARVIS\b", "MISRI", txt)
+        new_txt, n2 = re.subn(r"\bJarvis\b", "Misri", new_txt)
+        if n1 + n2:
+            p.write_text(new_txt, encoding="utf-8")
+            changed_files += 1
+            print(f"phase2 {p.relative_to(base)}: {n1 + n2} replacements")
+print(f"phase2 changed {changed_files} files")
+# Restore original-credit lines that phase 2 would otherwise rename
+# (and de-duplicate original_credit if the patch ever runs twice)
+_txt = RES.read_text(encoding="utf-8")
+_lines = _txt.splitlines()
+_seen_credit = False
+_out = []
+for _ln in _lines:
+    if "original_credit" in _ln:
+        if _seen_credit:
+            continue
+        _seen_credit = True
+    _out.append(_ln)
+RES.write_text("\n".join(_out) + "\n", encoding="utf-8")
+replace(APP / "util/PromptGenerator.kt", [
+    ('based on the original MISRI project by Tech GPTx', 'based on the original JARVIS project by Tech GPTx'),
+], must_find=False)
+replace(RES, [
+    ('<string name="original_credit">Original MISRI by Tech GPTx', '<string name="original_credit">Original JARVIS by Tech GPTx'),
+], must_find=False)
 
 print("Done. Verify with: grep -rn 'Hey Misri\\|app_name.*Misri' 'Part 7/app/src/main' | head")

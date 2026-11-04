@@ -598,3 +598,227 @@ replace(SERVICE, [
             }'''),
 ])
 print("Phase 4 done.")
+
+
+# === Phase 5 (v5, user feedback 2026-11-04: Live Weather --C / Tap to retry) ===
+# Root cause found in LocationWeatherHelper + HomeFragment (Run #4 screenshot):
+#  fetchWeather() returns only null on ANY failure, and HomeFragment then shows
+#  the same generic "Live Weather • Tap to retry" with no reason. So the user
+#  cannot tell whether permission was denied, phone Location is OFF, no GPS/
+#  network fix arrived, or Open-Meteo failed - and tapping retry just fails
+#  again the same way. Two concrete weaknesses made failure likely on a phone:
+#  (a) the fresh-location request timed out after only 4 seconds, too short
+#      for a cold GPS/network fix; (b) if the permission dialog was denied
+#      once (or permanently), re-launching the permission launcher shows no
+#      dialog at all, so it looked like the app "never asks for permission".
+# Fix:
+#  - LocationWeatherHelper now records lastFailureReason ("permission",
+#    "location_disabled", "no_location", "network") instead of a silent null,
+#    and the fresh-location timeout is 4 s -> 15 s.
+#  - HomeFragment shows a DIFFERENT, actionable message per reason: Location
+#    OFF -> tap opens the phone Location Settings; permission denied once ->
+#    next tap opens the app's Settings page (where Location can be allowed
+#    manually); network/API failure -> check internet and tap to retry.
+#  - On success the weather card shows temperature, condition + city and
+#    details exactly as before (Open-Meteo, no hard-coded city, no API key).
+WEATHER = APP / "util/LocationWeatherHelper.kt"
+replace(WEATHER, [
+    ('''object LocationWeatherHelper {
+
+    private const val TAG = "LocationWeatherHelper"''',
+     '''object LocationWeatherHelper {
+
+    // v5: why the last fetch failed ("", "permission", "location_disabled",
+    // "no_location", "network") - HomeFragment shows an actionable message.
+    var lastFailureReason: String = ""
+        private set
+
+    private const val TAG = "LocationWeatherHelper"'''),
+    ('''    suspend fun fetchWeather(context: Context): WeatherData? = withContext(Dispatchers.IO) {
+        if (!PermissionHelper.hasLocationPermission(context)) {
+            Log.w(TAG, "Location permission not granted")
+            return@withContext null
+        }
+
+        val location = getBestLocation(context)
+        if (location == null) {
+            Log.w(TAG, "No device location available; refusing to show weather for a hard-coded location")
+            return@withContext null
+        }''',
+     '''    suspend fun fetchWeather(context: Context): WeatherData? = withContext(Dispatchers.IO) {
+        if (!PermissionHelper.hasLocationPermission(context)) {
+            Log.w(TAG, "Location permission not granted")
+            lastFailureReason = "permission"
+            return@withContext null
+        }
+
+        val location = getBestLocation(context)
+        if (location == null) {
+            Log.w(TAG, "No device location available; refusing to show weather for a hard-coded location")
+            if (lastFailureReason.isEmpty()) lastFailureReason = "no_location"
+            return@withContext null
+        }'''),
+    ('''        // 2. Request a quick single location update with 4-second timeout
+        val freshLocation = withTimeoutOrNull(4000L) {''',
+     '''        // 2. Request a quick single location update with 15-second timeout
+        // (v5: 4 s was too short for a cold GPS/network fix on a phone)
+        val freshLocation = withTimeoutOrNull(15000L) {'''),
+    ('''                    if (provider != null) {
+                        LocationManagerCompat.requestLocationUpdates(locationManager, provider, request, listener, Looper.getMainLooper())
+                    } else {
+                        cont.resume(null)
+                    }''',
+     '''                    if (provider != null) {
+                        LocationManagerCompat.requestLocationUpdates(locationManager, provider, request, listener, Looper.getMainLooper())
+                    } else {
+                        // v5: no provider enabled = phone Location is OFF
+                        lastFailureReason = "location_disabled"
+                        cont.resume(null)
+                    }'''),
+    ('''        return try {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null''',
+     '''        return try {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    lastFailureReason = "network"
+                    return null
+                }'''),
+    ('''        } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch weather from Open-Meteo: ${e.message}")
+            null
+        }''',
+     '''        } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch weather from Open-Meteo: ${e.message}")
+            lastFailureReason = "network"
+            null
+        }'''),
+    ('''                WeatherData(
+                    temperature = tempStr,''',
+     '''                lastFailureReason = ""
+                WeatherData(
+                    temperature = tempStr,'''),
+])
+HOME = APP / "ui/home/HomeFragment.kt"
+replace(HOME, [
+    ('import android.content.Intent',
+     'import android.content.Intent\nimport android.net.Uri\nimport android.provider.Settings'),
+    ('''    private var lastAudioPushTime = 0L''',
+     '''    private var lastAudioPushTime = 0L
+    // v5 weather: next tap opens App Settings if permission was denied once
+    // (Android then shows no permission dialog), or Location Settings if
+    // the last fetch failed because phone Location is OFF / no fix.
+    private var locationPermissionDeniedOnce = false
+    private var weatherNeedsLocationSettings = false'''),
+    ('''        if (fineGranted || coarseGranted) {
+            fetchLiveWeather()
+        } else {
+            binding.tvWeatherCondition.text = "Location Permission Needed"
+            binding.tvWeatherDetails.text = "Tap here to grant location for accurate weather"
+        }''',
+     '''        if (fineGranted || coarseGranted) {
+            locationPermissionDeniedOnce = false
+            fetchLiveWeather()
+        } else {
+            // v5: dialog may not appear again after a denial - tell the user
+            // exactly where to allow it manually, and make the next tap open
+            // the app Settings page instead of a silent re-request.
+            locationPermissionDeniedOnce = true
+            binding.tvWeatherCondition.text = "Location Permission Needed"
+            binding.tvWeatherDetails.text = "Tap karke Settings > Apps > Misri > Permissions me Location Allow karo"
+        }'''),
+    ('''        // Weather Card Click -> Refresh or Request Permission
+        binding.cardWeather.setOnClickListener {
+            if (!PermissionHelper.hasLocationPermission(requireContext())) {
+                locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            } else {
+                fetchLiveWeather()
+            }
+        }''',
+     '''        // Weather Card Click -> Refresh or Request Permission (v5)
+        binding.cardWeather.setOnClickListener {
+            if (!PermissionHelper.hasLocationPermission(requireContext())) {
+                if (locationPermissionDeniedOnce) {
+                    // Permission dialog will not show again: open App Settings
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:" + requireContext().packageName)
+                        )
+                    )
+                } else {
+                    locationPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
+                }
+            } else if (weatherNeedsLocationSettings) {
+                // Last fetch failed because phone Location is OFF: open it
+                startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            } else {
+                fetchLiveWeather()
+            }
+        }'''),
+    ('''    private fun checkLocationAndFetchWeather() {
+        if (PermissionHelper.hasLocationPermission(requireContext())) {
+            fetchLiveWeather()
+        } else {''',
+     '''    private fun checkLocationAndFetchWeather() {
+        if (PermissionHelper.hasLocationPermission(requireContext())) {
+            locationPermissionDeniedOnce = false
+            fetchLiveWeather()
+        } else {'''),
+    ('''            val weather = LocationWeatherHelper.fetchWeather(requireContext())
+            if (_binding != null && weather != null) {
+                binding.tvTemperature.text = weather.temperature
+                binding.tvWeatherCondition.text = weather.condition
+                binding.tvWeatherDetails.text = weather.details
+                binding.ivWeatherIcon.setImageResource(weather.iconResId)
+                // Keep Misri's context aligned with the city shown on Home.
+                preferences.userLocation = weather.cityName
+            } else if (_binding != null) {
+                binding.tvWeatherCondition.text = "Live Weather • Tap to retry"
+            }''',
+     '''            val weather = LocationWeatherHelper.fetchWeather(requireContext())
+            if (_binding != null && weather != null) {
+                weatherNeedsLocationSettings = false
+                binding.tvTemperature.text = weather.temperature
+                binding.tvWeatherCondition.text = weather.condition
+                binding.tvWeatherDetails.text = weather.details
+                binding.ivWeatherIcon.setImageResource(weather.iconResId)
+                // Keep Misri's context aligned with the city shown on Home.
+                preferences.userLocation = weather.cityName
+            } else if (_binding != null) {
+                // v5: show WHY it failed, with an action the user can take,
+                // instead of the same generic "Tap to retry" every time.
+                when (LocationWeatherHelper.lastFailureReason) {
+                    "location_disabled", "no_location" -> {
+                        weatherNeedsLocationSettings = true
+                        binding.tvWeatherCondition.text = "Location ON karo • Tap to open Settings"
+                        binding.tvWeatherDetails.text = "Phone ki Location off hai ya fix nahi mila - Settings me Location on karke phir tap karo"
+                    }
+                    "permission" -> {
+                        weatherNeedsLocationSettings = false
+                        binding.tvWeatherCondition.text = "Location Permission Needed"
+                        binding.tvWeatherDetails.text = "Tap karke Settings > Apps > Misri > Permissions me Location Allow karo"
+                    }
+                    "network" -> {
+                        weatherNeedsLocationSettings = false
+                        binding.tvWeatherCondition.text = "Weather service se jawab nahi mila"
+                        binding.tvWeatherDetails.text = "Internet check karke tap to retry karo"
+                    }
+                    else -> {
+                        weatherNeedsLocationSettings = false
+                        binding.tvWeatherCondition.text = "Live Weather • Tap to retry"
+                    }
+                }
+            }'''),
+])
+print("Phase 5 done.")

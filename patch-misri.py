@@ -485,3 +485,116 @@ replace(P7 / "app/src/main/assets/settings/settings.html", [
     ('@TechGptX', 'Raj Chauhan'),
 ], must_find=False)
 print("Phase 3.1 done.")
+
+
+# === Phase 4 (v4, user feedback 2026-11-04: background phantom responses) ===
+# Root causes found in JarvisConversationService.kt (built APK behaviour):
+#  1. Once a session started, it stayed LIVE for 30 minutes (INACTIVITY_TIMEOUT),
+#     streaming EVERY mic chunk to Gemini Live. Any other people talking,
+#     TV, or a mis-transcribed fragment ("hello" -> something like a shayari
+#     request) therefore got a spoken reply, even in background.
+#  2. The Vosk standby wake check still verified the OLD word "jarvis"
+#     (wordConfMap["jarvis"] < 0.70 -> reject), so a spoken "misri" could
+#     NEVER pass Vosk wake verification. Standby wake for Misri was broken,
+#     which is why the app stayed in the always-listening Gemini session.
+# Fix (background only; foreground conversation is unchanged):
+#  - Vosk wake now verifies "misri" confidence, and "jarvis" no longer wakes.
+#  - Inactivity timeout 30 min -> 90 s: after 90 s without streamed user
+#    speech the session goes to Vosk-only standby (no Gemini, no reply).
+#  - Background mic gate in the AudioRecorder callback: when the app is NOT
+#    in foreground, mic chunks are NOT sent to Gemini unless the session was
+#    wake-activated ("misri") and is still inside its 90 s window, or an
+#    autonomous task is running. Normal human-to-human talk in background
+#    therefore never reaches Gemini and never gets a reply. Returning early
+#    also leaves lastUserSpeechDetectedTime untouched, so the 90 s timer can
+#    move the session to standby, where only "misri" (Vosk, local) can wake it.
+#  - After the 90 s window the user must say "misri" / "hello misri" again.
+SERVICE = APP / "background/JarvisConversationService.kt"
+replace(SERVICE, [
+    ('private const val INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000L // 30 minutes before standby',
+     'private const val INACTIVITY_TIMEOUT_MS = 90 * 1000L // 90 seconds before standby (v4: background phantom responses fix)'),
+    ('private var lastUserSpeechDetectedTime = 0L',
+     '''private var lastUserSpeechDetectedTime = 0L
+    // v4 background wake gate (see AudioRecorder callback below)
+    private var wakeActivatedSession = false
+    private var backgroundWakeExpiresAt = 0L
+    private val BACKGROUND_WAKE_WINDOW_MS = 90_000L'''),
+    ('isPendingWakeGreeting = wakeTriggered',
+     '''isPendingWakeGreeting = wakeTriggered
+        wakeActivatedSession = wakeTriggered
+        backgroundWakeExpiresAt = if (wakeTriggered) System.currentTimeMillis() + BACKGROUND_WAKE_WINDOW_MS else 0L'''),
+    ('''    private fun stopActiveConversation() {
+        inactivityJob?.cancel()''',
+     '''    private fun stopActiveConversation() {
+        wakeActivatedSession = false
+        backgroundWakeExpiresAt = 0L
+        inactivityJob?.cancel()'''),
+    ('''        audioRecorder = AudioRecorder { chunk, amplitude, frequencyData ->
+            if (_isSessionOn.value) {
+                val now = System.currentTimeMillis()''',
+     '''        audioRecorder = AudioRecorder { chunk, amplitude, frequencyData ->
+            if (_isSessionOn.value) {
+                val now = System.currentTimeMillis()
+
+                // v4 BACKGROUND WAKE GATE: in background, do not stream mic audio
+                // to Gemini unless this session was wake-activated ("misri") and is
+                // still inside its 90 s window, or an autonomous task is running.
+                // Normal talk between people in background is therefore ignored
+                // completely: no transcription, no reply, no shayari, no action.
+                if (!JarvisApp.isAppForeground.value && !isAutonomousTaskRunning &&
+                    !(wakeActivatedSession && now < backgroundWakeExpiresAt)) {
+                    return@AudioRecorder
+                }'''),
+    ('// Phrase grammar: allow single-word "jarvis", multi-syllable wake phrases, and [unk]',
+     '// Phrase grammar: allow single-word "misri", multi-syllable wake phrases, and [unk]'),
+    ('''            val isMatch = cleanPhrase in VALID_WAKE_PHRASES ||
+                    VALID_WAKE_PHRASES.any { cleanPhrase.contains(it) } ||
+                    wordList.contains("jarvis")''',
+     '''            val isMatch = cleanPhrase in VALID_WAKE_PHRASES ||
+                    VALID_WAKE_PHRASES.any { cleanPhrase.contains(it) }'''),
+    ('''            // 4. Acoustic Verification:
+            // 4. Acoustic Verification:
+            // "jarvis" must be specifically recognized with confidence
+            val jarvisConf = wordConfMap["jarvis"] ?: 0.0
+            if (jarvisConf < 0.70) {
+                Log.w("JarvisService", "WAKE REJECTED: 'jarvis' word confidence too low ($jarvisConf < 0.70). Ignored.")
+                return
+            }
+
+            if (wordList.size == 1 && wordList[0] == "jarvis") {
+                // Standalone single-word "jarvis"
+                if (avgConf < 0.75) {
+                    Log.w("JarvisService", "WAKE REJECTED: Standalone 'jarvis' failed checks (conf=$avgConf). Ignored.")
+                    return
+                }
+            } else {
+                // Multi-word phrases like "hey jarvis", "hello jarvis", "ok jarvis"
+                if (avgConf < 0.65) {
+                    Log.w("JarvisService", "WAKE REJECTED: Wake phrase failed checks (conf=$avgConf). Ignored.")
+                    return
+                }
+            }''',
+     '''            // 4. Acoustic Verification (v4: was checking the old word "jarvis",
+            // which made a spoken "misri" impossible to verify - now checks "misri"):
+            // "misri" must be specifically recognized with confidence
+            val misriConf = wordConfMap["misri"] ?: 0.0
+            if (misriConf < 0.70) {
+                Log.w("JarvisService", "WAKE REJECTED: 'misri' word confidence too low ($misriConf < 0.70). Ignored.")
+                return
+            }
+
+            if (wordList.size == 1 && wordList[0] == "misri") {
+                // Standalone single-word "misri"
+                if (avgConf < 0.75) {
+                    Log.w("JarvisService", "WAKE REJECTED: Standalone 'misri' failed checks (conf=$avgConf). Ignored.")
+                    return
+                }
+            } else {
+                // Multi-word phrases like "hey misri", "hello misri", "ok misri"
+                if (avgConf < 0.65) {
+                    Log.w("JarvisService", "WAKE REJECTED: Wake phrase failed checks (conf=$avgConf). Ignored.")
+                    return
+                }
+            }'''),
+])
+print("Phase 4 done.")

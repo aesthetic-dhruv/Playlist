@@ -2,6 +2,8 @@ package com.jarvis.assistant.automation.command
 
 import android.util.Log
 import com.jarvis.assistant.automation.phone.PhoneControlManager
+import com.jarvis.assistant.appmanager.AppManagerVoiceRouter // MISRI APP MANAGER (Run #7)
+import com.jarvis.assistant.appmanager.CleanerAction // MISRI APP MANAGER (Run #7)
 import com.jarvis.assistant.automation.whatsapp.WhatsAppAssistant
 import com.jarvis.assistant.automation.youtube.YouTubeAutomationManager
 import com.jarvis.assistant.data.memory.MemoryManager
@@ -76,6 +78,12 @@ class CommandExecutor(
             is JarvisCommand.RecallBirthday -> memoryManager.getBirthdayResponse()
             is JarvisCommand.RecallFavoriteSong -> memoryManager.getFavoriteSongResponse()
             is JarvisCommand.RecallRoutine -> memoryManager.getRoutineResponse()
+            // MISRI APP MANAGER (Run #7): hamesha Cleaner screen khulti hai, confirm ke baad hi queue.
+            is JarvisCommand.ForceStopAllApps -> AppManagerVoiceRouter.routeFromCommand(CleanerAction.FORCE_STOP, null, null, false)
+            is JarvisCommand.ClearCacheAllApps -> AppManagerVoiceRouter.routeFromCommand(CleanerAction.CLEAR_CACHE, null, null, false)
+            is JarvisCommand.ForceStopApp -> AppManagerVoiceRouter.routeFromCommand(CleanerAction.FORCE_STOP, null, command.appLabel, false)
+            is JarvisCommand.ClearCacheApp -> AppManagerVoiceRouter.routeFromCommand(CleanerAction.CLEAR_CACHE, null, command.appLabel, false)
+            is JarvisCommand.OpenAppManager -> AppManagerVoiceRouter.routeFromCommand(null, null, command.appLabel, command.clearDataMode)
             is JarvisCommand.GoToBackground -> "Going to background."
         }
     }

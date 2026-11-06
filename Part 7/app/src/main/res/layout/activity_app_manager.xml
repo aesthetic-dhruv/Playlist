@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Misri Phone Cleaner — Cute Pink theme (#EC4899 / #FFF0F6 / #4A1030).
+     Colours literal hain taaki kisi theme attr par depend na kare. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFF0F6"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Phone Cleaner"
+        android:textColor="#4A1030"
+        android:textSize="26sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Misri App Manager • ek-ek karke, turant sab ek saath nahi"
+        android:textColor="#8A3A66"
+        android:textSize="13sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_pink_card"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/tvHonestNote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ek tap se queue shuru hoti hai, andar Misri Settings khol kar ek-ek app ka button dabati hai. Har app par 2-4 second lagte hain. Screen on rakhna, beech me Settings ko mat chhedna."
+            android:textColor="#4A1030"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_pink_card"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/tvAccessStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Accessibility: check ho raha hai…"
+            android:textColor="#4A1030"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvUsageStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Usage Access: check ho raha hai…"
+            android:textColor="#8A3A66"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnEnableAccessibility"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_pink_button"
+            android:text="Accessibility me Misri ON karo"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/btnEnableUsageAccess"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_pink_button"
+            android:text="Usage Access allow karo (size dekhne ke liye)"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/etSearch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_pink_card"
+        android:hint="App dhoondho… (jaise Instagram, Chrome)"
+        android:padding="12dp"
+        android:textColor="#4A1030"
+        android:textColorHint="#B06A90" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnFilterAll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_pink_card"
+            android:text="All"
+            android:textColor="#4A1030" />
+
+        <Button
+            android:id="@+id/btnFilterInstalled"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_pink_card"
+            android:text="Installed"
+            android:textColor="#4A1030" />
+
+        <Button
+            android:id="@+id/btnFilterSystem"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_pink_card"
+            android:text="System"
+            android:textColor="#4A1030" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/tvSelectSummary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="0 selected"
+            android:textColor="#4A1030"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnSelectAll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_pink_card"
+            android:text="Select All"
+            android:textColor="#EC4899" />
+
+        <Button
+            android:id="@+id/btnSelectNone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_pink_card"
+            android:text="None"
+            android:textColor="#EC4899" />
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerApps"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/tvEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="Koi app nahi mili"
+        android:textColor="#8A3A66"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/progressCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_pink_card"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvProgressCurrent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Kar rahi hoon…"
+            android:textColor="#4A1030"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:max="100"
+            android:progress="0" />
+
+        <TextView
+            android:id="@+id/tvProgressCounts"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Done: 0 • Fail: 0 • Skip: 0"
+            android:textColor="#8A3A66"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:maxHeight="120dp"
+            android:scrollbars="vertical"
+            android:textColor="#4A1030"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnStopQueue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_pink_button"
+            android:text="Stop karo"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnForceStopAll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_pink_button"
+            android:text="Force Stop All"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/btnClearCacheAll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_pink_button"
+            android:text="Clear Cache All"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_danger_card"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚠ DANGER — Clear Data"
+            android:textColor="#DC2626"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Data clear karne se logout, settings reset aur bina backup ke WhatsApp chats bhi chale jayenge. Do baar confirm karne ke baad hi chalega."
+            android:textColor="#7F1D1D"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnClearData"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_danger_button"
+            android:text="Clear Data (Danger)"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+</LinearLayout>

@@ -67,6 +67,56 @@ object CommandParser {
 
         val prefix = "^(?:please\\s+|can you\\s+|could you\\s+|just\\s+)?"
 
+
+        // 2b. Misri Phone Cleaner / App Manager (Run #7)
+        // Voice se cache / force-stop — hamesha Phone Cleaner screen khulti
+        // hai aur on-screen confirm ke baad hi queue chalti hai. Clear Data
+        // voice se kabhi execute nahi hota, sirf selection screen khulti hai.
+        val cleanerAllCache = clean == "sab apps ka cache clear karo" ||
+            clean == "sab app ka cache clear karo" ||
+            clean == "saare apps ka cache clear karo" ||
+            clean == "sabka cache clear karo" ||
+            clean == "sab apps ka cache saaf karo" ||
+            clean == "clear cache of all apps" ||
+            clean == "clear all apps cache"
+        if (cleanerAllCache) {
+            return ParsedCommandResult(JarvisCommand.ClearCacheAllApps, 0.97f, "CLEANER_CACHE_ALL")
+        }
+        val cleanerAllForce = clean == "sab apps ko force stop karo" ||
+            clean == "saare apps ko force stop karo" ||
+            clean == "sab apps band karo" ||
+            clean == "saare apps band karo" ||
+            clean == "force stop all apps"
+        if (cleanerAllForce) {
+            return ParsedCommandResult(JarvisCommand.ForceStopAllApps, 0.97f, "CLEANER_FORCE_ALL")
+        }
+        val cleanerDataAll = clean == "sab apps ka data clear karo" ||
+            clean == "saare apps ka data clear karo"
+        if (cleanerDataAll) {
+            return ParsedCommandResult(JarvisCommand.OpenAppManager(clearDataMode = true), 0.97f, "CLEANER_DATA_ALL_OPEN")
+        }
+        val singleForce = Regex("^(.*?)\\s+(ko\\s+)?force stop\\s*(karo|kar\\s*do|karde)?$").find(clean)
+            ?: Regex("^force stop\\s+(.+)$").find(clean)
+        if (singleForce != null) {
+            val name = singleForce.groupValues[1].trim()
+            if (name.isNotEmpty() && name != "sab" && name != "saare") {
+                return ParsedCommandResult(JarvisCommand.ForceStopApp(name), 0.96f, "CLEANER_FORCE_ONE")
+            }
+        }
+        val singleCacheName = Regex("^(.*?)\\s+(ka\\s+)?cache\\s*(clear|saaf)\\s*(karo|kar\\s*do|karde)?$").find(clean)
+            ?.groupValues?.getOrNull(1)?.trim()
+            ?: Regex("^clear cache( of)?\\s+(.+)$").find(clean)?.groupValues?.getOrNull(2)?.trim()
+        if (!singleCacheName.isNullOrEmpty() && singleCacheName != "sab" && singleCacheName != "saare") {
+            return ParsedCommandResult(JarvisCommand.ClearCacheApp(singleCacheName), 0.96f, "CLEANER_CACHE_ONE")
+        }
+        val singleData = Regex("^(.*?)\\s+(ka\\s+)?data\\s*(clear|delete|saaf)\\s*(karo|kar\\s*do|karde)?$").find(clean)
+        if (singleData != null) {
+            val name = singleData.groupValues[1].trim()
+            if (name.isNotEmpty() && name != "sab" && name != "saare") {
+                return ParsedCommandResult(JarvisCommand.OpenAppManager(clearDataMode = true, appLabel = name), 0.96f, "CLEANER_DATA_ONE_OPEN")
+            }
+        }
+
         // 3. Flashlight / Torch Commands (Strict Anchoring & Natural Variations across Indian languages)
         val flashWords = "(?:flash\\s*light|flash\\s*lite|flashlight|flash|torch|light|batti)"
         if (clean.matches(Regex("$prefix(?:turn\\s+on|open|enable|switch\\s+on)\\s+(?:the\\s+)?$flashWords$")) ||

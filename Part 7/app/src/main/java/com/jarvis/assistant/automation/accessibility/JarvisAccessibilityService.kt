@@ -225,6 +225,8 @@ class JarvisAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
+        // MISRI APP MANAGER (Run #7): queue driver ko forward karo (reuse, naya service nahi).
+        com.jarvis.assistant.appmanager.AppManagerDriver.onAccessibilityEvent(this, event)
         val pkg = event.packageName?.toString().orEmpty()
         if (event.eventType in setOf(
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_manager_title">Phone Cleaner</string>
+    <string name="app_manager_subtitle">Misri App Manager — ek-ek karke, turant sab ek saath nahi</string>
+    <string name="app_manager_honest_note">Ek tap se queue shuru hoti hai, andar Misri Settings khol kar ek-ek app ka button dabati hai. Har app par 2-4 second lagte hain. Screen on rakhna, beech me Settings ko mat chhedna.</string>
+    <string name="app_manager_accessibility_off">Accessibility: OFF — pehle ON karo, warna koi action chalega nahi</string>
+    <string name="app_manager_accessibility_on">Accessibility: ON — Misri Settings khol kar buttons daba sakti hai</string>
+    <string name="app_manager_usage_off">Usage Access: OFF — size nahi dikhega (optional, kaam phir bhi chalega)</string>
+    <string name="app_manager_usage_on">Usage Access: ON — cache/data size dikh raha hai</string>
+    <string name="app_manager_danger_title">DANGER — Clear Data</string>
+    <string name="app_manager_danger_note">Data clear karne se logout, settings reset aur bina backup ke WhatsApp chats bhi chale jayenge. Do baar confirm karne ke baad hi chalega.</string>
+</resources>

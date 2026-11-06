@@ -19,6 +19,7 @@ import com.jarvis.assistant.data.model.GeminiConstants
 import com.jarvis.assistant.databinding.FragmentSettingsBinding
 import com.jarvis.assistant.ui.memory.MemoryActivity
 import com.jarvis.assistant.ui.permission.PermissionActivity
+import com.jarvis.assistant.appmanager.AppManagerActivity // MISRI APP MANAGER (Run #7)
 import com.jarvis.assistant.ui.voice.VoiceEnrollmentActivity
 
 class SettingsFragment : Fragment() {
@@ -171,6 +172,11 @@ class SettingsFragment : Fragment() {
 
         binding.rowApplications.setOnClickListener {
             startActivity(Intent(requireContext(), HandsFreeActivity::class.java))
+        }
+
+        // MISRI APP MANAGER (Run #7): Settings > Phone Cleaner
+        binding.rowPhoneCleaner.setOnClickListener {
+            startActivity(Intent(requireContext(), AppManagerActivity::class.java))
         }
 
         // Section 3: Appearance & Security

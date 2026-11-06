@@ -28,4 +28,11 @@ sealed class JarvisCommand {
     object RecallFavoriteSong : JarvisCommand()
     object RecallRoutine : JarvisCommand()
     object GoToBackground : JarvisCommand()
+
+    // MISRI APP MANAGER (Run #7): Clear Data voice se kabhi execute nahi hota.
+    data class ForceStopApp(val appLabel: String) : JarvisCommand()
+    data class ClearCacheApp(val appLabel: String) : JarvisCommand()
+    object ForceStopAllApps : JarvisCommand()
+    object ClearCacheAllApps : JarvisCommand()
+    data class OpenAppManager(val clearDataMode: Boolean = false, val appLabel: String? = null) : JarvisCommand()
 }

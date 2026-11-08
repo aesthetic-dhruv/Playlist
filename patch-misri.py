@@ -822,3 +822,376 @@ replace(HOME, [
             }'''),
 ])
 print("Phase 5 done.")
+
+
+# === Phase 6 (v6, user feedback 2026-11-08: voice / persona / language) ===
+# NOTE: this is "Phase 6" in patch-misri.py, but it is NOT the same as the
+# separate Run #7 Phone Cleaner change (which was committed directly to
+# Part 7/ in the fork, not to this patch file). This patch only touches
+# voice / persona / language files, so it applies cleanly on top of Run #7.
+# Root causes found in PersonaActivity / PromptGenerator / service:
+#  1. Voice, persona and language are BAKED into the Gemini Live session at
+#     connect time (GeminiLiveWebSocket constructor: voiceName + systemPrompt,
+#     sent once in sendSetupMessage; reconnect/9-min renewal reuses the same
+#     instance). PersonaActivity.saveAndActivate() and both language dialogs
+#     only saved SharedPreferences and finished - they never stopped the
+#     running session. So a female voice ticked in the UI kept speaking in
+#     the old male voice (Puck/Charon), a new persona kept the old prompt,
+#     and a new language kept the old prompt, until the session was fully
+#     stopped and started again.
+#  2. Persona screen had NO card for Professional Mode (only Misri Pro,
+#     Girlfriend, Boyfriend, Raj Chauhan Mode), although Professional Mode
+#     exists in SUPPORTED_PERSONALITIES and PromptGenerator. And
+#     loadInitialState() mapped ANY other saved persona (Professional,
+#     Companion, Focus) back to Misri Pro, so Professional could never stick.
+#  3. Tapping a persona card silently overwrote the voice radio (Misri Pro
+#     -> Charon male, Raj Chauhan Mode -> Puck male), so a female voice the
+#     user had just picked was flipped back to male before Activate.
+#  4. Language "Auto" produced an EMPTY language instruction in the prompt,
+#     so Gemini had no explicit rule to mirror the user's spoken language
+#     and fell back to English.
+# Fix:
+#  - Persona screen gains a Professional Mode card; loadInitialState and
+#    the preview preserve Professional / Companion / Focus instead of
+#    forcing Misri Pro.
+#  - Persona cards no longer overwrite the voice radio: persona and voice
+#    are separate choices, and the voice the user ticked is the one saved.
+#  - saveAndActivate() and both language dialogs now fully stop the live
+#    session (ACTION_STOP_ALL, only if a session/standby is running) so the
+#    next start builds a fresh Gemini session with the new voice, persona
+#    and language. The Toast tells the user to start Misri again.
+#  - PromptGenerator "Auto" now gets an explicit mirror rule: detect the
+#    language the user is speaking in each turn and reply in exactly that
+#    language, never defaulting to English (unless Professional/Focus Mode
+#    explicitly requires English).
+PERSONA = APP / "ui/settings/PersonaActivity.kt"
+replace(PERSONA, [
+    ('''    private fun loadInitialState() {
+        val current = preferences.personality
+        val initialPersona = when (current) {
+            GeminiConstants.PERSONALITY_GIRLFRIEND -> GeminiConstants.PERSONALITY_GIRLFRIEND
+            GeminiConstants.PERSONALITY_BOYFRIEND -> GeminiConstants.PERSONALITY_BOYFRIEND
+            GeminiConstants.PERSONALITY_TECHGPT_X -> GeminiConstants.PERSONALITY_TECHGPT_X
+            else -> GeminiConstants.PERSONALITY_ASSISTANT
+        }''',
+     '''    private fun loadInitialState() {
+        val current = preferences.personality
+        // v6: preserve Professional / Companion / Focus instead of forcing
+        // Misri Pro - they had no card and were silently lost on reopen.
+        val initialPersona = when (current) {
+            GeminiConstants.PERSONALITY_GIRLFRIEND -> GeminiConstants.PERSONALITY_GIRLFRIEND
+            GeminiConstants.PERSONALITY_BOYFRIEND -> GeminiConstants.PERSONALITY_BOYFRIEND
+            GeminiConstants.PERSONALITY_TECHGPT_X -> GeminiConstants.PERSONALITY_TECHGPT_X
+            GeminiConstants.PERSONALITY_PROFESSIONAL -> GeminiConstants.PERSONALITY_PROFESSIONAL
+            GeminiConstants.PERSONALITY_COMPANION -> GeminiConstants.PERSONALITY_COMPANION
+            GeminiConstants.PERSONALITY_FOCUS -> GeminiConstants.PERSONALITY_FOCUS
+            else -> GeminiConstants.PERSONALITY_ASSISTANT
+        }'''),
+    ('''        binding.cardPersonaTechGpt.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_TECHGPT_X, updateVoiceDefault = true)
+        }''',
+     '''        binding.cardPersonaTechGpt.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_TECHGPT_X, updateVoiceDefault = false)
+        }
+
+        binding.cardPersonaProfessional.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_PROFESSIONAL, updateVoiceDefault = false)
+        }'''),
+    ('''        binding.cardPersonaJarvis.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_ASSISTANT, updateVoiceDefault = true)
+        }
+
+        binding.cardPersonaGirlfriend.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_GIRLFRIEND, updateVoiceDefault = true)
+        }
+
+        binding.cardPersonaBoyfriend.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_BOYFRIEND, updateVoiceDefault = true)
+        }''',
+     '''        // v6: persona cards no longer overwrite the voice radio (tapping
+        // Misri Pro used to force Charon male, wiping a female voice just
+        // picked). Persona and voice are separate choices now.
+        binding.cardPersonaJarvis.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_ASSISTANT, updateVoiceDefault = false)
+        }
+
+        binding.cardPersonaGirlfriend.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_GIRLFRIEND, updateVoiceDefault = false)
+        }
+
+        binding.cardPersonaBoyfriend.setOnClickListener {
+            selectPersona(GeminiConstants.PERSONALITY_BOYFRIEND, updateVoiceDefault = false)
+        }'''),
+    ('''        binding.rbSelectJarvis.isChecked = (personaKey == GeminiConstants.PERSONALITY_ASSISTANT)
+        binding.rbSelectGirlfriend.isChecked = (personaKey == GeminiConstants.PERSONALITY_GIRLFRIEND)
+        binding.rbSelectBoyfriend.isChecked = (personaKey == GeminiConstants.PERSONALITY_BOYFRIEND)
+        binding.rbSelectTechGpt.isChecked = (personaKey == GeminiConstants.PERSONALITY_TECHGPT_X)
+
+        if (updateVoiceDefault) {
+            when (personaKey) {
+                GeminiConstants.PERSONALITY_GIRLFRIEND -> selectVoice("Aoede")
+                GeminiConstants.PERSONALITY_BOYFRIEND -> selectVoice("Fenrir")
+                GeminiConstants.PERSONALITY_TECHGPT_X -> selectVoice("Puck")
+                else -> selectVoice("Charon")
+            }
+        }''',
+     '''        binding.rbSelectJarvis.isChecked = (personaKey == GeminiConstants.PERSONALITY_ASSISTANT)
+        binding.rbSelectGirlfriend.isChecked = (personaKey == GeminiConstants.PERSONALITY_GIRLFRIEND)
+        binding.rbSelectBoyfriend.isChecked = (personaKey == GeminiConstants.PERSONALITY_BOYFRIEND)
+        binding.rbSelectTechGpt.isChecked = (personaKey == GeminiConstants.PERSONALITY_TECHGPT_X)
+        binding.rbSelectProfessional.isChecked = (personaKey == GeminiConstants.PERSONALITY_PROFESSIONAL)
+
+        // v6: updateVoiceDefault is now ignored - the voice radio is the
+        // user's own choice and must not be overwritten by a persona tap.
+        // (Parameter kept for call-site compatibility; intentionally unused.)'''),
+    ('''        val persona = when (currentSelectedPersona) {
+            GeminiConstants.PERSONALITY_GIRLFRIEND -> "Pari"
+            GeminiConstants.PERSONALITY_BOYFRIEND -> "Kabir"
+            GeminiConstants.PERSONALITY_TECHGPT_X -> "Raj Chauhan"
+            else -> "Misri Pro"
+        }''',
+     '''        val persona = when (currentSelectedPersona) {
+            GeminiConstants.PERSONALITY_GIRLFRIEND -> "Pari"
+            GeminiConstants.PERSONALITY_BOYFRIEND -> "Kabir"
+            GeminiConstants.PERSONALITY_TECHGPT_X -> "Raj Chauhan"
+            GeminiConstants.PERSONALITY_PROFESSIONAL -> "Professional"
+            GeminiConstants.PERSONALITY_COMPANION -> "Companion"
+            GeminiConstants.PERSONALITY_FOCUS -> "Focus"
+            else -> "Misri Pro"
+        }'''),
+    ('''        val personaDisplayName = when (currentSelectedPersona) {
+            GeminiConstants.PERSONALITY_GIRLFRIEND -> "Pari (Girlfriend Mode)"
+            GeminiConstants.PERSONALITY_BOYFRIEND -> "Kabir (Boyfriend Mode)"
+            GeminiConstants.PERSONALITY_TECHGPT_X -> "Raj Chauhan Neural Core"
+            else -> "Misri Pro"
+        }
+
+        Toast.makeText(
+            this,
+            "Activated: $personaDisplayName with $voice Voice",
+            Toast.LENGTH_LONG
+        ).show()
+
+        finish()
+    }''',
+     '''        val personaDisplayName = when (currentSelectedPersona) {
+            GeminiConstants.PERSONALITY_GIRLFRIEND -> "Pari (Girlfriend Mode)"
+            GeminiConstants.PERSONALITY_BOYFRIEND -> "Kabir (Boyfriend Mode)"
+            GeminiConstants.PERSONALITY_TECHGPT_X -> "Raj Chauhan Neural Core"
+            GeminiConstants.PERSONALITY_PROFESSIONAL -> "Professional Mode"
+            GeminiConstants.PERSONALITY_COMPANION -> "Companion Mode"
+            GeminiConstants.PERSONALITY_FOCUS -> "Focus Mode"
+            else -> "Misri Pro"
+        }
+
+        // v6: voice + persona are baked into the Gemini session at connect
+        // time, so a running session would keep the OLD voice/persona.
+        // Fully stop it here; the next start builds a fresh session with
+        // the newly saved voice and persona.
+        restartLiveSessionForNewSettings()
+
+        Toast.makeText(
+            this,
+            "Activated: $personaDisplayName with $voice Voice. Misri ko dobara start karo - nayi voice ab lagegi.",
+            Toast.LENGTH_LONG
+        ).show()
+
+        finish()
+    }
+
+    private fun restartLiveSessionForNewSettings() {
+        val service = com.jarvis.assistant.background.JarvisConversationService
+        if (!service.isSessionOn.value && !service.isStandby.value) return
+        try {
+            val intent = android.content.Intent(this, com.jarvis.assistant.background.JarvisConversationService::class.java)
+                .setAction(service.ACTION_STOP_ALL)
+            androidx.core.content.ContextCompat.startForegroundService(this, intent)
+        } catch (_: Exception) {}
+    }'''),
+])
+# Professional Mode card in the Persona layout (after the Raj Chauhan card,
+# before the Configuration Section), same structure as the other cards.
+PERSONA_XML = P7 / "app/src/main/res/layout/activity_persona.xml"
+replace(PERSONA_XML, [
+    ('''                <RadioButton
+                    android:id="@+id/rbSelectTechGpt"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="false"
+                    android:focusable="false" />
+            </LinearLayout>
+
+            <!-- Configuration Section -->''',
+     '''                <RadioButton
+                    android:id="@+id/rbSelectTechGpt"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="false"
+                    android:focusable="false" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardPersonaProfessional"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_jarvis_card"
+                android:padding="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:layout_marginBottom="20dp">
+
+                <FrameLayout
+                    android:layout_width="48dp"
+                    android:layout_height="48dp">
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_jarvis_avatar"
+                        android:src="@drawable/ic_settings_shield"
+                        app:tint="#6366F1"
+                        android:padding="12dp"
+                        android:contentDescription="Professional Mode" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="14dp">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Professional Mode"
+                            android:textColor="?attr/themeTextPrimary"
+                            android:textSize="16sp"
+                            android:fontFamily="sans-serif-medium"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="FORMAL"
+                            android:singleLine="true"
+                            android:maxLines="1"
+                            android:textColor="#6366F1"
+                            android:textSize="10sp"
+                            android:textStyle="bold"
+                            android:fontFamily="sans-serif-medium"
+                            android:background="@drawable/bg_jarvis_chip"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp"
+                            android:layout_marginStart="8dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Formal, polished, executive English - no slang"
+                        android:textColor="?attr/themeTextMuted"
+                        android:textSize="12sp"
+                        android:fontFamily="sans-serif"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <RadioButton
+                    android:id="@+id/rbSelectProfessional"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="false"
+                    android:focusable="false" />
+            </LinearLayout>
+
+            <!-- Configuration Section -->'''),
+])
+# PromptGenerator: "Auto" language now gets an explicit mirror rule instead
+# of an empty instruction, so Gemini does not fall back to English.
+PROMPT = APP / "util/PromptGenerator.kt"
+replace(PROMPT, [
+    ('''        } else {
+            ""
+        }
+
+        val personalityInstruction = when (personality) {''',
+     '''        } else {
+            // v6: "Auto" used to produce an empty instruction, so Gemini had
+            // no explicit rule to mirror the user's language and fell back
+            // to English. Now Auto is an explicit mirror rule.
+            """
+[LANGUAGE: Auto - mirror the user]:
+- Detect the language the user is speaking in each turn (Hinglish, Hindi, English, Telugu, Tamil, or any other language) and reply in EXACTLY that same language.
+- NEVER default to English when the user spoke another language.
+- If the user speaks Hinglish, reply in Hinglish (Hindi + English written in Latin script), not in English.
+- Exception: if the selected persona is Professional / Focus Mode, which explicitly requires English, use English.
+""".trimIndent()
+        }
+
+        val personalityInstruction = when (personality) {'''),
+])
+# Language dialogs: choosing a language now also fully stops the live
+# session, so the next start uses the new language prompt (same root cause
+# as voice/persona - prompt is baked in at connect time).
+HOME_FRAG = APP / "ui/home/HomeFragment.kt"
+replace(HOME_FRAG, [
+    ('''            .setSingleChoiceItems(languages, currentIndex) { dialog, which ->
+                val chosen = languages[which]
+                preferences.language = chosen
+                binding.tvQuickLanguageStatus.text = chosen
+                dialog.dismiss()
+            }''',
+     '''            .setSingleChoiceItems(languages, currentIndex) { dialog, which ->
+                val chosen = languages[which]
+                preferences.language = chosen
+                binding.tvQuickLanguageStatus.text = chosen
+                // v6: language is baked into the Gemini session at connect
+                // time - stop the running session so the next start uses it.
+                val service = com.jarvis.assistant.background.JarvisConversationService
+                if (service.isSessionOn.value || service.isStandby.value) {
+                    try {
+                        val intent = android.content.Intent(requireContext(), com.jarvis.assistant.background.JarvisConversationService::class.java)
+                            .setAction(service.ACTION_STOP_ALL)
+                        androidx.core.content.ContextCompat.startForegroundService(requireContext(), intent)
+                    } catch (_: Exception) {}
+                }
+                android.widget.Toast.makeText(requireContext(), "Language: $chosen. Misri ko dobara start karo.", android.widget.Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }'''),
+])
+SETTINGS_FRAG = APP / "ui/settings/SettingsFragment.kt"
+replace(SETTINGS_FRAG, [
+    ('''            .setSingleChoiceItems(languages, currentIndex) { dialog, which ->
+                val chosen = languages[which]
+                preferences.language = chosen
+                binding.tvCurrentLanguage.text = chosen
+                dialog.dismiss()
+            }''',
+     '''            .setSingleChoiceItems(languages, currentIndex) { dialog, which ->
+                val chosen = languages[which]
+                preferences.language = chosen
+                binding.tvCurrentLanguage.text = chosen
+                // v6: language is baked into the Gemini session at connect
+                // time - stop the running session so the next start uses it.
+                val service = com.jarvis.assistant.background.JarvisConversationService
+                if (service.isSessionOn.value || service.isStandby.value) {
+                    try {
+                        val intent = android.content.Intent(requireContext(), com.jarvis.assistant.background.JarvisConversationService::class.java)
+                            .setAction(service.ACTION_STOP_ALL)
+                        androidx.core.content.ContextCompat.startForegroundService(requireContext(), intent)
+                    } catch (_: Exception) {}
+                }
+                Toast.makeText(requireContext(), "Language: $chosen. Misri ko dobara start karo.", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }'''),
+])
+print("Phase 6 done.")

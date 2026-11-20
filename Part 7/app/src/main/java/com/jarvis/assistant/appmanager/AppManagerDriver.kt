@@ -47,6 +47,11 @@ object AppManagerDriver {
     private const val PER_APP_TIMEOUT_MS = 20_000L
     private const val STEP_RETRY_MS = 700L
     private const val NEXT_APP_DELAY_MS = 500L
+    // Run #9 — system app ka cache turant dobara bhar jata hai (jaise Media
+    // Storage). 2 baar clear karne par bhi cache wapas aaye to us app ko
+    // dobara try hi nahi karna — skip karke agle app par jao.
+    private const val MAX_CLEAR_ATTEMPTS = 2
+    private const val CACHE_SETTLE_MS = 1500L
 
     data class Job(val packageName: String, val label: String, val action: CleanerAction)
 
@@ -57,12 +62,13 @@ object AppManagerDriver {
         val skipped: Int,
         val currentLabel: String,
         val running: Boolean,
-        val log: List<JobResult>
+        val log: List<JobResult>,
+        val action: CleanerAction = CleanerAction.CLEAR_CACHE
     )
 
     private enum class Step {
         WAIT_DETAILS, CLICK_FORCE_STOP, WAIT_FORCE_CONFIRM,
-        CLICK_STORAGE_ROW, WAIT_STORAGE_SCREEN, WAIT_DELETE_CONFIRM, IDLE
+        CLICK_STORAGE_ROW, WAIT_STORAGE_SCREEN, WAIT_CACHE_SETTLE, WAIT_DELETE_CONFIRM, IDLE
     }
 
     private val _progress = MutableStateFlow<Progress?>(null)
@@ -76,6 +82,11 @@ object AppManagerDriver {
     private var stepEnteredAt: Long = 0L
     private var running: Boolean = false
     private val results = ArrayList<JobResult>()
+    // Run #9 — ek app par cache clear ki koshishon ki ginti.
+    private var clearAttempts: Int = 0
+    private var settleChecks: Int = 0
+    private var lastService: AccessibilityService? = null
+    private var currentAction: CleanerAction = CleanerAction.CLEAR_CACHE
 
     private val watchdog = object : Runnable {
         override fun run() {
@@ -86,9 +97,11 @@ object AppManagerDriver {
                 Log.w(TAG, "timeout on ${job.packageName} at $step")
                 finishCurrent(JobStatus.FAILED, "Time khatam — button nahi mila ya screen nahi khuli")
                 openNext()
-            } else {
-                handler.postDelayed(this, 1000L)
             }
+            // Run #9 fix: pehle watchdog pehle timeout ke baad mar jata tha
+            // (else branch me hi re-post hota tha), isliye agle app par
+            // atakne par koi rescue nahi bachta tha. Ab har baar re-arm karo.
+            if (running) handler.postDelayed(this, 1000L)
         }
     }
 
@@ -112,8 +125,10 @@ object AppManagerDriver {
         index = -1
         results.clear()
         running = true
+        currentAction = safeJobs.firstOrNull()?.action ?: CleanerAction.CLEAR_CACHE
         publish(currentLabel = "")
         handler.post(watchdog)
+        appContext?.let { AppManagerOverlay.show(it, currentAction) }
         AppManagerNotifier.showProgress(context, currentProgress())
         openNext()
         return true
@@ -132,6 +147,7 @@ object AppManagerDriver {
         handler.removeCallbacks(watchdog)
         handler.removeCallbacksAndMessages(null)
         step = Step.IDLE
+        AppManagerOverlay.hide()
         if (!keepProgress) {
             _progress.value = null
         }
@@ -158,12 +174,13 @@ object AppManagerDriver {
         val failed = results.count { it.status == JobStatus.FAILED }
         val skipped = results.count { it.status == JobStatus.SKIPPED }
         val current = if (index in jobs.indices) jobs[index].label else ""
-        return Progress(jobs.size, done, failed, skipped, current, running, results.toList())
+        return Progress(jobs.size, done, failed, skipped, current, running, results.toList(), currentAction)
     }
 
     private fun publish(currentLabel: String) {
         _progress.value = currentProgress().copy(currentLabel = currentLabel)
         appContext?.let { AppManagerNotifier.showProgress(it, _progress.value!!) }
+        AppManagerOverlay.update(_progress.value!!)
     }
 
     private fun setStep(newStep: Step) {
@@ -179,6 +196,8 @@ object AppManagerDriver {
             return
         }
         val job = jobs[index]
+        clearAttempts = 0
+        settleChecks = 0
         setStep(Step.WAIT_DETAILS)
         publish(job.label)
         val ctx = appContext ?: return
@@ -202,6 +221,7 @@ object AppManagerDriver {
         running = false
         handler.removeCallbacks(watchdog)
         step = Step.IDLE
+        AppManagerOverlay.hide()
         val final = currentProgress().copy(running = false, currentLabel = "")
         _progress.value = final
         val ctx = appContext
@@ -228,6 +248,7 @@ object AppManagerDriver {
 
     private fun advance(service: AccessibilityService) {
         val job = jobs.getOrNull(index) ?: return
+        lastService = service
         val root = service.rootInActiveWindow ?: return
         when (step) {
             Step.WAIT_DETAILS -> {
@@ -241,6 +262,7 @@ object AppManagerDriver {
             Step.CLICK_FORCE_STOP -> {
                 val node = findClickable(root, "Force stop") ?: return
                 if (!node.isEnabled) {
+                    setStep(Step.IDLE)
                     finishCurrent(JobStatus.SKIPPED, "Force stop button band tha (pehle se band hai)")
                     handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
                     return
@@ -251,12 +273,14 @@ object AppManagerDriver {
                 // Dialog: "If you force stop an app..." — OK dabao.
                 val ok = findClickable(root, "OK")
                 if (ok != null && clickNode(ok)) {
+                    setStep(Step.IDLE)
                     finishCurrent(JobStatus.DONE, "Force stop ho gaya")
                     handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
                     return
                 }
                 // Dialog hi nahi aaya aur button gayab = pehle se stopped.
                 if (findNode(root, "Force stop") == null) {
+                    setStep(Step.IDLE)
                     finishCurrent(JobStatus.DONE, "Force stop ho gaya")
                     handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
                 }
@@ -272,13 +296,27 @@ object AppManagerDriver {
                     CleanerAction.CLEAR_CACHE -> {
                         val node = findClickable(root, "Clear cache") ?: return
                         if (!node.isEnabled) {
+                            setStep(Step.IDLE)
                             finishCurrent(JobStatus.SKIPPED, "Cache 0 hai — clear karne ko kuch nahi")
                             handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
                             return
                         }
-                        if (clickNode(node)) {
-                            finishCurrent(JobStatus.DONE, "Cache clear ho gaya")
+                        // Run #9 — user ka rule: 2 baar clear karne par bhi
+                        // cache dobara bhar jaye to us app ko dobara try hi
+                        // nahi karna. Teesri baar click karne se pehle skip.
+                        if (clearAttempts >= MAX_CLEAR_ATTEMPTS) {
+                            setStep(Step.IDLE)
+                            finishCurrent(JobStatus.SKIPPED, "Cache 2 baar clear karne par bhi dobara bhar gaya — skip kar diya")
                             handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
+                            return
+                        }
+                        if (clickNode(node)) {
+                            // Click ke baad turant DONE mat likho aur step ko
+                            // WAIT_CACHE_SETTLE par le jao — is beech aane
+                            // wale content events dobara click nahi karenge.
+                            clearAttempts++
+                            setStep(Step.WAIT_CACHE_SETTLE)
+                            handler.postDelayed({ verifyCacheSettled() }, CACHE_SETTLE_MS)
                         }
                     }
                     CleanerAction.CLEAR_DATA -> {
@@ -286,6 +324,7 @@ object AppManagerDriver {
                             ?: findClickable(root, "Clear data")
                             ?: return
                         if (!node.isEnabled) {
+                            setStep(Step.IDLE)
                             finishCurrent(JobStatus.SKIPPED, "Clear storage button band tha")
                             handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
                             return
@@ -299,18 +338,69 @@ object AppManagerDriver {
                 // Dialog: "Delete app data?" — Delete dabao, phir OK (agar aaye).
                 val delete = findClickable(root, "Delete")
                 if (delete != null && clickNode(delete)) {
+                    setStep(Step.IDLE)
                     finishCurrent(JobStatus.DONE, "Data clear ho gaya")
                     handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
                     return
                 }
                 val ok = findClickable(root, "OK")
                 if (ok != null && clickNode(ok)) {
+                    setStep(Step.IDLE)
                     finishCurrent(JobStatus.DONE, "Data clear ho gaya")
                     handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
                 }
             }
+            // Run #9: Clear cache click ke baad settle ka wait — is step me
+            // aane wale har content event par dobara click NAHI hota.
+            Step.WAIT_CACHE_SETTLE -> Unit
             Step.IDLE -> Unit
         }
+    }
+
+    /**
+     * Run #9 — Clear cache click ke ~1.5s baad check karo ki cache sach me
+     * 0 hua ya dobara bhar gaya. System apps (Media Storage jaisi) ka cache
+     * turant dobara banta hai, isliye button abhi bhi enabled mil sakta hai.
+     */
+    private fun verifyCacheSettled() {
+        if (!running) return
+        if (step != Step.WAIT_CACHE_SETTLE) return
+        val job = jobs.getOrNull(index) ?: return
+        val root = lastService?.rootInActiveWindow
+        if (root == null) {
+            if (settleChecks < 3) {
+                settleChecks++
+                handler.postDelayed({ verifyCacheSettled() }, STEP_RETRY_MS)
+            } else {
+                setStep(Step.IDLE)
+                finishCurrent(JobStatus.DONE, "Cache clear ho gaya")
+                handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
+            }
+            return
+        }
+        val node = findClickable(root, "Clear cache")
+        if (node == null || !node.isEnabled) {
+            // Cache 0 ho gaya — button band/gayab.
+            setStep(Step.IDLE)
+            finishCurrent(JobStatus.DONE, "Cache clear ho gaya")
+            handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
+            return
+        }
+        // Button abhi bhi enabled = cache dobara bhar gaya.
+        if (clearAttempts < MAX_CLEAR_ATTEMPTS) {
+            if (clickNode(node)) {
+                clearAttempts++
+                handler.postDelayed({ verifyCacheSettled() }, CACHE_SETTLE_MS)
+            } else {
+                setStep(Step.IDLE)
+                finishCurrent(JobStatus.FAILED, "Clear cache button dabaya nahi gaya")
+                handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
+            }
+            return
+        }
+        setStep(Step.IDLE)
+        finishCurrent(JobStatus.SKIPPED, "Cache 2 baar clear karne par bhi dobara bhar gaya — skip kar diya")
+        handler.postDelayed({ openNext() }, NEXT_APP_DELAY_MS)
     }
 
     // ---- Node helpers (existing JarvisAccessibilityService jaisa pattern:

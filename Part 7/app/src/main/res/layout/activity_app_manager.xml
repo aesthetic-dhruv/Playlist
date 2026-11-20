@@ -82,6 +82,24 @@
             android:background="@drawable/bg_pink_button"
             android:text="Usage Access allow karo (size dekhne ke liye)"
             android:textColor="#FFFFFF" />
+
+        <TextView
+            android:id="@+id/tvOverlayStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Overlay: check ho raha hai…"
+            android:textColor="#8A3A66"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnEnableOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_pink_button"
+            android:text="Overlay allow karo (avatar wali screen ke liye)"
+            android:textColor="#FFFFFF" />
     </LinearLayout>
 
     <EditText

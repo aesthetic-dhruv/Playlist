@@ -1,6 +1,7 @@
 package com.jarvis.assistant.appmanager
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
@@ -94,6 +95,10 @@ class AppManagerActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             Toast.makeText(this, "Usage Access me Misri ko allow karo — tab cache/data size dikhega", Toast.LENGTH_LONG).show()
         }
+        binding.btnEnableOverlay.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            Toast.makeText(this, "Misri ko 'Display over other apps' allow karo — tab saaf karte waqt Misri ka avatar dikhega", Toast.LENGTH_LONG).show()
+        }
 
         binding.btnForceStopAll.setOnClickListener { askAndStart(CleanerAction.FORCE_STOP) }
         binding.btnClearCacheAll.setOnClickListener { askAndStart(CleanerAction.CLEAR_CACHE) }
@@ -181,6 +186,13 @@ class AppManagerActivity : AppCompatActivity() {
         }
         binding.btnEnableAccessibility.visibility = if (accessOn) View.GONE else View.VISIBLE
         binding.btnEnableUsageAccess.visibility = if (usageOn) View.GONE else View.VISIBLE
+        val overlayOn = Settings.canDrawOverlays(this)
+        binding.tvOverlayStatus.text = if (overlayOn) {
+            "Overlay: ON — saaf karte waqt Misri ka avatar dikhega"
+        } else {
+            "Overlay: OFF — avatar wali screen ke liye allow karo (optional)"
+        }
+        binding.btnEnableOverlay.visibility = if (overlayOn) View.GONE else View.VISIBLE
         // Action buttons tab tak disabled jab tak Accessibility ON na ho.
         val queueRunning = AppManagerDriver.isRunning()
         val actionsEnabled = accessOn && !queueRunning && selected.isNotEmpty()
@@ -215,7 +227,8 @@ class AppManagerActivity : AppCompatActivity() {
             .setMessage(
                 "Misri ek-ek karke Settings khol kar $what karegi — turant sab ek saath nahi hoga. " +
                     "Har app par 2-4 second lagenge. Screen on rakhna aur beech me Settings ko mat chhedna.\n\n" +
-                    "Notifications us waqt tak ruk sakti hain jab tak app dobara na khule."
+                    "Notifications us waqt tak ruk sakti hain jab tak app dobara na khule.\n\n" +
+                    "System apps ka cache turant dobara bhar sakta hai — aisi app 2 baar try karke skip kar di jayegi, loop nahi chalega."
             )
             .setPositiveButton("Shuru karo") { _, _ -> startQueue(jobs) }
             .setNegativeButton("Cancel", null)
